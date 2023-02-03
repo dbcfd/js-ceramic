@@ -2,6 +2,7 @@ import 'reflect-metadata'
 import { jsonObject, jsonMember, jsonArrayMember, TypedJSON, toJson, AnyT } from 'typedjson'
 import { readFile } from 'node:fs/promises'
 import { homedir } from 'os'
+import * as CeramicConfig from 'ceramic-config'
 
 /**
  * Replace `~/` with `<homedir>/` absolute path, and `~+/` with `<cwd>/`.
@@ -411,9 +412,8 @@ export class DaemonConfig {
    * @param jsonString
    */
   static fromString(jsonString: string): DaemonConfig {
-    const jsonObject = JSON.parse(jsonString)
+    return this.fromCeramicConfig(CeramicConfig.from_string(jsonString))
 
-    return this.fromObject(jsonObject)
   }
 
   static async fromFile(filepath: URL): Promise<DaemonConfig> {
@@ -431,5 +431,65 @@ export class DaemonConfig {
     })
 
     return serializer.parse(json)
+  }
+
+  static fromCeramicConfig(obj: CeramicConfig.Config): DaemonConfig {
+    const cfg = new DaemonConfig()
+    const anchor = new DaemonAnchorConfig()
+    anchor.anchorServiceUrl = obj.anchor().anchor_service_url
+    anchor.ethereumRpcUrl = obj.anchor().ethereum_rpc_url
+    cfg.anchor = anchor
+    const httpApi = new DaemonHTTPApiConfig()
+    httpApi.hostname = obj.http_api().hostname
+    httpApi.port = obj.http_api().port
+    cfg.httpApi = httpApi
+    const ipfs = new DaemonIpfsConfig()
+    const remote = obj.ipfs().remote
+    if(remote) {
+      ipfs.host = remote.host
+      ipfs.mode = IpfsMode.REMOTE
+    }
+    cfg.ipfs = ipfs
+    const logger = new DaemonLoggerConfig()
+    const file = obj.logger().file
+    if(file) {
+      logger.logToFiles = file.enabled
+      logger.logDirectory = file.directory
+    }
+    logger.logLevel = obj.logger().level
+    cfg.logger = logger
+    const metrics = new DaemonMetricsConfig()
+    metrics.metricsExporterEnabled = obj.metrics().enabled
+    metrics.collectorHost = obj.metrics().host
+    cfg.metrics = metrics
+    const network = new DaemonCeramicNetworkConfig()
+    network.name = obj.network().name
+    network.pubsubTopic = obj.network().pubsub_topic
+    cfg.network = network
+    const node = new DaemonCeramicNodeConfig()
+    node.gateway = obj.node().gateway
+    //what are the values for this?
+    //node.syncOverride = obj.node().sync_override
+    node.streamCacheLimit = obj.node().stream_cache_limit
+    cfg.node = node
+    const stateStore = new DaemonStateStoreConfig()
+    const state = obj.state_store()
+    if(state.s3) {
+      stateStore.mode = StateStoreMode.S3
+      stateStore.s3Bucket = state.s3.bucket
+      stateStore.s3Endpoint = state.s3.endpoint
+    } else {
+      stateStore.mode = StateStoreMode.FS
+      stateStore.localDirectory = state.local_directory
+    }
+    cfg.stateStore = stateStore
+    const didResolvers = new DaemonDidResolversConfig()
+    cfg.didResolvers = didResolvers
+    const indexing = new IndexingConfig()
+    indexing.db = obj.index().db
+    indexing.allowQueriesBeforeHistoricalSync = obj.index().allow_queries_before_historical_sync
+    cfg.indexing = indexing
+
+    return cfg
   }
 }
